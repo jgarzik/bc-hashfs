@@ -4,16 +4,20 @@ import os
 import json
 import binascii
 import hashlib
-import datetime
+from datetime import time, datetime
+import logging
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, HttpResponseServerError
 from django.core.servers.basehttp import FileWrapper
 from rest_framework.decorators import api_view
 from two1.lib.bitserv.django import payment
+import hashfs.settings as settings
+
+logger = logging.getLogger(__name__)
 
 blank_re = re.compile('^\s*$')
 
-SQLS_HASH_QUERY = "SELECT val_size,strftime('%s',time_create),strftime('%s',time_expire),content_type FROM metadata WHERE hash = ?"
-SQLS_HASH_INSERT = "INSERT INTO metadata(hash,val_size,time_create,time_expire,content_type,pubkey_hash VALUES(?, ?, datetime('now'), datetime('now', '+24 hours'), ?, NULL)"
+SQLS_HASH_QUERY = "SELECT val_size,time_create,time_expire,content_type FROM metadata WHERE hash = ?"
+SQLS_HASH_INSERT = "INSERT INTO metadata(hash,val_size,time_create,time_expire,content_type,pubkey_hash VALUES(?, ?, ?, ?, ?, NULL)"
 
 def httpdate(dt):
     """Return a string representation of a date according to RFC 1123
@@ -64,16 +68,19 @@ def home(request):
 def make_hashfs_fn(hexstr, make_dirs=False):
     dir1 = hexstr[:3]
     dir2 = hexstr[3:6]
-    fn = settings.HASHFS_ROOT_DIR + dir1 + "/" + dir2 + "/" + hexstr
+
+    dir1_pn = "%s%s" % (settings.HASHFS_ROOT_DIR, dir1)
+    dir2_pn = "%s%s/%s" % (settings.HASHFS_ROOT_DIR, dir1, dir2)
+    fn = "%s%s/%s/%s" % (settings.HASHFS_ROOT_DIR, dir1, dir2, hexstr)
 
     if not make_dirs:
         return fn
 
     try:
-        if not os.path.isdir(settings.HASHFS_ROOT_DIR + dir1 + "/" + dir2):
-            if not os.path.isdir(settings.HASHFS_ROOT_DIR + dir1):
-                os.mkdir(settings.HASHFS_ROOT_DIR + dir1)
-            os.mkdir(settings.HASHFS_ROOT_DIR + dir1 + "/" + dir2)
+        if not os.path.isdir(dir2_pn):
+            if not os.path.isdir(dir1_pn):
+                os.mkdir(dir1_pn)
+            os.mkdir(dir2_pn)
     except OSError:
         return False
 
@@ -100,7 +107,7 @@ def hashfs_get(request, hexstr):
 
     # query for metadata
     md = {}
-    for md_size,md_created,md_expire,md_ctype in cursor.execute(SQLS_HASH_QUERY, (hexstr,)):
+    for md_size,md_created,md_expires,md_ctype in cursor.execute(SQLS_HASH_QUERY, (hexstr,)):
         md['size'] = int(md_size)
         md['created'] = int(md_created)
         md['expires'] = int(md_expires)
@@ -111,15 +118,21 @@ def hashfs_get(request, hexstr):
 
     # set up FileWrapper to return data
     filename = make_hashfs_fn(hexstr)
-    wrapper = FileWrapper(file(filename))
 
-    dt = datetime.utcfromtimestamp(md['created'])
+    try:
+        wrapper = FileWrapper(open(filename))
+    except:
+        logger.error("failed read " + filename)
+        return HttpResponseServerError("hash data read failure")
+
+    dt = datetime.fromtimestamp(md['created'])
+    last_mod = httpdate(dt)
 
     response = HttpResponse(wrapper, content_type='application/octet-stream')
     response['Content-Length'] = md['size']
     response['Content-Type'] = md['content_type']
     response['ETag'] = hexstr
-    response['Last-Modified'] = httpdate(dt)
+    response['Last-Modified'] = last_mod
     return response
 
 
@@ -179,9 +192,13 @@ def hashfs_put(request, hexstr):
     connection = settings.HASHFS_DB
     cursor = connection.cursor()
 
+    # Create, expiration times
+    tm_creat = int(time.time())
+    tm_expire = tm_creat + (24 * 60 * 60)
+
     # Add hash metadata to db
     # TODO: test for errors, unlink file if so
-    cursor.execute(SQLS_HASH_INSERT, (hexstr, body_len, ctype))
+    cursor.execute(SQLS_HASH_INSERT, (hexstr, body_len, tm_creat, tm_expire, ctype))
 
     return HttpResponse('true', content_type='application/json')
 
