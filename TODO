@@ -6,8 +6,6 @@
 
 - Use chunked upload rather than all-in-memory approach.
 
-- store public key upon PUT
-
 - delete, iff signed requested matches previously stored public key
 
 - pay to extend expiration date

@@ -5,6 +5,7 @@ import json
 import binascii
 import hashlib
 import time
+import base58
 from datetime import datetime
 import logging
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, HttpResponseServerError
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 blank_re = re.compile('^\s*$')
 
 SQLS_HASH_QUERY = "SELECT val_size,time_create,time_expire,content_type FROM metadata WHERE hash = ?"
-SQLS_HASH_INSERT = "INSERT INTO metadata(hash,val_size,time_create,time_expire,content_type,pubkey_addr) VALUES(?, ?, ?, ?, ?, NULL)"
+SQLS_HASH_INSERT = "INSERT INTO metadata(hash,val_size,time_create,time_expire,content_type,pubkey_addr) VALUES(?, ?, ?, ?, ?, ?)"
 
 def httpdate(dt):
     """Return a string representation of a date according to RFC 1123
@@ -150,6 +151,24 @@ def hashfs_put(request, hexstr):
     if len(hash) != 32:
         return HttpResponseBadRequest("invalid hash length")
 
+    # get content-type
+    ctype = request.META['CONTENT_TYPE']
+    if blank_re.match(ctype):
+        ctype = 'application/octet-stream'
+
+    # note public key hash, if provided
+    pkh = None
+    if 'HTTP_X_HASHFS_PKH' in request.META:
+        pkh = request.META['HTTP_X_HASHFS_PKH']
+
+        if len(pkh) < 32 or len(pkh) > 35:
+            return HttpResponseBadRequest("invalid pubkey hash length")
+
+        try:
+            base58.b58decode_check(pkh)
+        except:
+            return HttpResponseBadRequest("invalid pubkey hash")
+
     # check file existence; if it exists, no need to proceed further
     # create dir1/dir2 hierarchy if need be
     filename = make_hashfs_fn(hexstr, True)
@@ -174,11 +193,6 @@ def hashfs_put(request, hexstr):
     if int(request.META['CONTENT_LENGTH']) != body_len:
         return HttpResponseBadRequest("content-length invalid - does not match data")
 
-    # get content-type
-    ctype = request.META['CONTENT_TYPE']
-    if blank_re.match(ctype):
-        ctype = 'application/octet-stream'
-
     # write to filesystem
     try:
         outf = open(filename, 'wb')
@@ -198,7 +212,7 @@ def hashfs_put(request, hexstr):
 
     # Add hash metadata to db
     # TODO: test for errors, unlink file if so
-    cursor.execute(SQLS_HASH_INSERT, (hexstr, body_len, tm_creat, tm_expire, ctype))
+    cursor.execute(SQLS_HASH_INSERT, (hexstr, body_len, tm_creat, tm_expire, ctype, pkh))
 
     return HttpResponse('true', content_type='application/json')
 
