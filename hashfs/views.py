@@ -185,14 +185,14 @@ def hashfs_get(request, hexstr):
 
     # query for metadata
     md = {}
-    for md_size,md_created,md_expires,md_ctype in cursor.execute(SQLS_HASH_QUERY, (hexstr,)):
-        md['size'] = int(md_size)
-        md['created'] = int(md_created)
-        md['expires'] = int(md_expires)
-        md['content_type'] = md_ctype
+    row = cursor.execute(SQLS_HASH_QUERY, (hexstr,)).fetchone()
+    if row is None:
+        return HttpResponseNotFound("hash not found")
 
-    if len(md.keys()) != 4:
-        return HttpResponseNotFound("hash metadata not found")
+    md['size'] = int(row[0])
+    md['created'] = int(row[1])
+    md['expires'] = int(row[2])
+    md['content_type'] = row[3]
 
     # set up FileWrapper to return data
     filename = make_hashfs_fn(hexstr)
