@@ -4,13 +4,13 @@
 - Implement total storage byte limit.  PUTs refused when limit hit
   (and nothing to expire).
 
-- Use chunked upload rather than all-in-memory approach.
+- server: Use chunked upload rather than all-in-memory approach.
+
+- CLI: Use chunked upload rather than all-in-memory approach.
 
 - delete, iff signed requested matches previously stored public key
 
 - pay to extend expiration date
 
 - variable pricing
-
-- CLI client
 

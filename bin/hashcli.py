@@ -9,6 +9,7 @@ import traceback
 import json
 import pprint
 import sys
+import hashlib
 
 import click
 from mnemonic import Mnemonic
@@ -17,12 +18,7 @@ from path import Path
 from two1.lib.bitrequests import BitTransferRequests
 from two1.lib.blockchain.chain_provider import ChainProvider
 from two1.lib.blockchain.twentyone_provider import TwentyOneProvider
-from two1.lib.wallet.account_types import account_types
-from two1.lib.wallet.base_wallet import convert_to_btc
-from two1.lib.wallet.base_wallet import convert_to_satoshis
-from two1.lib.wallet.base_wallet import satoshi_to_btc
 from two1.lib.wallet import exceptions
-from two1.lib.wallet.two1_wallet import Two1Wallet
 from two1.lib.wallet.two1_wallet import Wallet
 from two1.lib.wallet.daemonizer import get_daemonizer
 from two1.commands.config import Config
@@ -30,6 +26,7 @@ from two1.commands.config import Config
 
 HASHCLI_VERSION = "0.0.1"
 DEFAULT_ENDPOINT = "http://127.0.0.1:8000/"
+MAX_DATA_SIZE = 100 * 1000 * 1000
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 REQUIRED_DATA_PROVIDER_PARAMS = {'chain': ['chain_api_key_id', 'chain_api_key_secret'],
                                  'twentyone': []}
@@ -163,7 +160,7 @@ def validate_data_provider(ctx, param, value):
 @click.version_option(HASHCLI_VERSION)
 @click.pass_context
 def main(ctx, endpoint, debug):
-    """ Command-line Interface for the Two1 Wallet
+    """ Command-line Interface for the HashFS API storage service
     """
 
     # Initialize some logging handlers
@@ -192,6 +189,7 @@ def cmd_info(ctx):
     json_val = json.loads(response.text)
     pp.pprint(json_val)
 
+
 @click.command(name='get')
 @click.argument('hash')
 @click.pass_context
@@ -206,7 +204,34 @@ def cmd_get(ctx, hash):
 
     sys.stdout.write(response.text)
 
+
+@click.command(name='put')
+@click.argument('input', type=click.File('rb'))
+@click.pass_context
+@handle_exceptions
+@log_usage
+def cmd_put(ctx, input):
+
+    # read entire file - might be very large
+    body = input.read()
+    if len(body) > MAX_DATA_SIZE:
+        ctx.fail("File too large. Limit: 100M")
+
+    # hash file data
+    h = hashlib.new('sha256')
+    h.update(body)
+    hash = h.hexdigest()
+
+    # upload data
+    hash_url = "%shashfs/1/put/%s" % (ctx.obj['endpoint'], hash)
+    response = requests.put(url=hash_url, data=body)
+
+    # output response
+    print(hash)
+
+
 main.add_command(cmd_get)
+main.add_command(cmd_put)
 main.add_command(cmd_info)
 
 if __name__ == "__main__":

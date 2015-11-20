@@ -114,3 +114,36 @@ Headers evaluated:
 * Content-Type: Optional; If not specified, set to application/octet-stream
 * X-HashFS-PKH: Optional; If specified, stored, and used for authenticating requests
 
+
+Command Line Interface
+======================
+
+The ```hashcli.py``` tool provides command line access to any hashfs endpoint.
+
+Command: help
+-------------
+The tool and all sub-commands support "--help" to provide command line help.
+
+	$ hashcli.py --help
+
+	$ hashcli.py get --help
+
+
+Command: info
+-------------
+
+	$ hashcli.py info > endpoint.json
+
+
+Command: get
+------------
+
+	$ hashcli.py get 45cf8aa8e740c3c0c48b5aaceaceae64f58d18379c35059cdf57a5802cd89f2c > myfile.dat
+
+
+Command: put
+------------
+
+	$ hashcli.py put README.md
+	45cf8aa8e740c3c0c48b5aaceaceae64f58d18379c35059cdf57a5802cd89f2c
+
