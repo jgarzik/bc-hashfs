@@ -7,6 +7,9 @@ Summary
 This is an API service that provides a hash-based REST GET/PUT, providing
 content-addressible data storage services.
 
+The intention is to have many people/organizations run a hashfs service,
+creating a decentralized storage mesh.
+
 This project aims towards a robust, high performance API service
 using django, nginx, uwsgi and 21BC.
 
