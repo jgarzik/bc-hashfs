@@ -1,0 +1,20 @@
+
+- Expire older data, when new PUT appears, and old data exists to be expired.
+
+- Implement total storage byte limit.  PUTs refused when limit hit
+  (and nothing to expire).
+
+- Use chunked upload rather than all-in-memory approach.
+
+- Store and retrieve content-type
+
+- etag header
+
+- store public key upon PUT
+
+- delete, iff signed requested matches previously stored public key
+
+- pay to extend expiration date
+
+- variable pricing
+
