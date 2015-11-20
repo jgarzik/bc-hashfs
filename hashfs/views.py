@@ -37,8 +37,8 @@ def home(request):
     # export API endpoint metadata
     home_obj = [
         {
-            "name": "hashfs/1",
-            "pricing-type": "per-rpc",
+            "name": "hashfs/1",           # service 'hashfs', version '1'
+            "pricing-type": "per-rpc",    # indicates layout of "pricing"
             "pricing" : [
                 {
                     "rpc": "get",
@@ -56,7 +56,6 @@ def home(request):
                 {
                     "rpc": True,          # True = indicates default
                     "per-req": 1,         # 1 satoshi per request
-                    "per-kb": 10,         # 10 satoshis per 1000 bytes
                 },
             ]
         }
