@@ -4,7 +4,8 @@ import os
 import json
 import binascii
 import hashlib
-from datetime import time, datetime
+import time
+from datetime import datetime
 import logging
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, HttpResponseServerError
 from django.core.servers.basehttp import FileWrapper
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 blank_re = re.compile('^\s*$')
 
 SQLS_HASH_QUERY = "SELECT val_size,time_create,time_expire,content_type FROM metadata WHERE hash = ?"
-SQLS_HASH_INSERT = "INSERT INTO metadata(hash,val_size,time_create,time_expire,content_type,pubkey_hash VALUES(?, ?, ?, ?, ?, NULL)"
+SQLS_HASH_INSERT = "INSERT INTO metadata(hash,val_size,time_create,time_expire,content_type,pubkey_addr) VALUES(?, ?, ?, ?, ?, NULL)"
 
 def httpdate(dt):
     """Return a string representation of a date according to RFC 1123
@@ -158,7 +159,7 @@ def hashfs_put(request, hexstr):
         return HttpResponseBadRequest("hash already exists")
 
     # get data in memory, up to 100M (limit set in nginx config)
-    body = request.raw_post_data
+    body = request.body
     body_len = len(body)
 
     # hash data
@@ -180,7 +181,7 @@ def hashfs_put(request, hexstr):
 
     # write to filesystem
     try:
-        outf = open(filename, 'w')
+        outf = open(filename, 'wb')
         outf.write(body)
         outf.close()
     except OSError:
