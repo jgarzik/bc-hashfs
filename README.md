@@ -7,6 +7,10 @@ Summary
 This is an API service that provides a hash-based REST GET/PUT, providing
 content-addressible data storage services.
 
+This project aims towards a robust, high performance API service
+using django, nginx, uwsgi and 21BC.
+
+
 Theory of Operation
 -------------------
 The interface is very REST-ful, and intended to behave similarly
