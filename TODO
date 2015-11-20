@@ -6,10 +6,6 @@
 
 - Use chunked upload rather than all-in-memory approach.
 
-- Store and retrieve content-type
-
-- etag header
-
 - store public key upon PUT
 
 - delete, iff signed requested matches previously stored public key

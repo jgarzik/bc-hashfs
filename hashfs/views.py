@@ -1,11 +1,32 @@
+
+import re
 import os
 import json
 import binascii
 import hashlib
+import datetime
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, HttpResponseServerError
 from django.core.servers.basehttp import FileWrapper
 from rest_framework.decorators import api_view
 from two1.lib.bitserv.django import payment
+
+blank_re = re.compile('^\s*$')
+
+SQLS_HASH_QUERY = "SELECT val_size,strftime('%s',time_create),strftime('%s',time_expire),content_type FROM metadata WHERE hash = ?"
+SQLS_HASH_INSERT = "INSERT INTO metadata(hash,val_size,time_create,time_expire,content_type,pubkey_hash VALUES(?, ?, datetime('now'), datetime('now', '+24 hours'), ?, NULL)"
+
+def httpdate(dt):
+    """Return a string representation of a date according to RFC 1123
+    (HTTP/1.1).
+
+    The supplied date must be in UTC.
+
+    """
+    weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dt.weekday()]
+    month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+             "Oct", "Nov", "Dec"][dt.month - 1]
+    return "%s, %02d %s %04d %02d:%02d:%02d GMT" % (weekday, dt.day, month,
+        dt.year, dt.hour, dt.minute, dt.second)
 
 @api_view(['GET'])
 def home(request):
@@ -79,20 +100,26 @@ def hashfs_get(request, hexstr):
 
     # query for metadata
     md = {}
-    for md_size,md_created,md_expires in cursor.execute("SELECT val_size,strftime('%s',time_create),strftime('%s',time_expire) FROM metadata WHERE hash = ?", (hash,)):
+    for md_size,md_created,md_expire,md_ctype in cursor.execute(SQLS_HASH_QUERY, (hexstr,)):
         md['size'] = int(md_size)
         md['created'] = int(md_created)
         md['expires'] = int(md_expires)
+        md['content_type'] = md_ctype
 
-    if len(md.keys()) != 3:
+    if len(md.keys()) != 4:
         return HttpResponseNotFound("hash metadata not found")
 
     # set up FileWrapper to return data
     filename = make_hashfs_fn(hexstr)
     wrapper = FileWrapper(file(filename))
 
+    dt = datetime.utcfromtimestamp(md['created'])
+
     response = HttpResponse(wrapper, content_type='application/octet-stream')
     response['Content-Length'] = md['size']
+    response['Content-Type'] = md['content_type']
+    response['ETag'] = hexstr
+    response['Last-Modified'] = httpdate(dt)
     return response
 
 
@@ -134,6 +161,11 @@ def hashfs_put(request, hexstr):
     if int(request.META['CONTENT_LENGTH']) != body_len:
         return HttpResponseBadRequest("content-length invalid - does not match data")
 
+    # get content-type
+    ctype = request.META['CONTENT_TYPE']
+    if blank_re.match(ctype):
+        ctype = 'application/octet-stream'
+
     # write to filesystem
     try:
         outf = open(filename, 'w')
@@ -147,8 +179,9 @@ def hashfs_put(request, hexstr):
     connection = settings.HASHFS_DB
     cursor = connection.cursor()
 
+    # Add hash metadata to db
     # TODO: test for errors, unlink file if so
-    cursor.execute("INSERT INTO metadata VALUES(?, ?, NULL, datetime('now'), datetime('now', '+24 hours'))", (hash, body_len))
+    cursor.execute(SQLS_HASH_INSERT, (hexstr, body_len, ctype))
 
     return HttpResponse('true', content_type='application/json')
 

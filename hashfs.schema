@@ -1,7 +1,8 @@
 CREATE TABLE metadata (
-	hash BLOB PRIMARY KEY,
-	val_size INTEGER,
-	pubkey BLOB,
-	time_create INTEGER,
-	time_expire INTEGER
+	hash		TEXT PRIMARY KEY,
+	val_size	INTEGER NOT NULL,
+	time_create	INTEGER NOT NULL,
+	time_expire	INTEGER NOT NULL,
+	content_type	TEXT NOT NULL,
+	pubkey_addr	TEXT
 );
