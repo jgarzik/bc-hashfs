@@ -1,6 +1,8 @@
+import os
 import json
 import binascii
-from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotFound
+import hashlib
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, HttpResponseServerError
 from django.core.servers.basehttp import FileWrapper
 from rest_framework.decorators import api_view
 from two1.lib.bitserv.django import payment
@@ -38,10 +40,22 @@ def home(request):
     return HttpResponse(body, content_type='application/json')
 
 
-def make_hashfs_fn(hexstr):
+def make_hashfs_fn(hexstr, make_dirs=False):
     dir1 = hexstr[:3]
     dir2 = hexstr[3:6]
     fn = settings.HASHFS_ROOT_DIR + dir1 + "/" + dir2 + "/" + hexstr
+
+    if not make_dirs:
+        return fn
+
+    try:
+        if not os.path.isdir(settings.HASHFS_ROOT_DIR + dir1 + "/" + dir2):
+            if not os.path.isdir(settings.HASHFS_ROOT_DIR + dir1):
+                os.mkdir(settings.HASHFS_ROOT_DIR + dir1)
+            os.mkdir(settings.HASHFS_ROOT_DIR + dir1 + "/" + dir2)
+    except OSError:
+        return False
+
     return fn
 
 
@@ -82,9 +96,59 @@ def hashfs_get(request, hexstr):
     return response
 
 
-@api_view(['GET'])
+@api_view(['PUT'])
 @payment.required(1)
-def hashfs_put(request):
-    body="Put data..."
-    return HttpResponse(body, content_type='text/plain')
+def hashfs_put(request, hexstr):
+
+    # decode hex string param
+    hexstr = hexstr.lower()
+    try:
+        hash = binascii.unhexlify(hexstr)
+    except TypeError:
+        return HttpResponseBadRequest("invalid hash")
+
+    if len(hash) != 32:
+        return HttpResponseBadRequest("invalid hash length")
+
+    # check file existence; if it exists, no need to proceed further
+    # create dir1/dir2 hierarchy if need be
+    filename = make_hashfs_fn(hexstr, True)
+    if filename is None:
+        return HttpResponseServerError("local storage failure")
+    if os.path.isfile(filename):
+        return HttpResponseBadRequest("hash already exists")
+
+    # get data in memory, up to 100M (limit set in nginx config)
+    body = request.raw_post_data
+    body_len = len(body)
+
+    # hash data
+    h = hashlib.new('sha256')
+    h.update(body)
+
+    # verify hash matches provided
+    if h.hexdigest() != hexstr:
+        return HttpResponseBadRequest("hash invalid - does not match data")
+
+    # verify content-length matches provided
+    if int(request.META['CONTENT_LENGTH']) != body_len:
+        return HttpResponseBadRequest("content-length invalid - does not match data")
+
+    # write to filesystem
+    try:
+        outf = open(filename, 'w')
+        outf.write(body)
+        outf.close()
+    except OSError:
+        return HttpResponseServerError("local storage failure")
+    body = None
+
+    # get sqlite handle
+    connection = settings.HASHFS_DB
+    cursor = connection.cursor()
+
+    # TODO: test for errors, unlink file if so
+    cursor.execute("INSERT INTO metadata VALUES(?, ?, NULL, datetime('now'), datetime('now', '+24 hours'))", (hash, body_len))
+
+    return HttpResponse('true', content_type='application/json')
 
