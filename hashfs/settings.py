@@ -92,4 +92,5 @@ APPEND_SLASH = False
 
 HASHFS_DB = apsw.Connection("hashfs.sqlite3")
 HASHFS_ROOT_DIR = BASE_DIR + '/hashroot/'
+HASHFS_MAX_GB = 2
 

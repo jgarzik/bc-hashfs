@@ -1,11 +1,26 @@
 
+hashfs API service
+==================
+
+Summary
+-------
 This is an API service that provides a hash-based REST GET/PUT, providing
 content-addressible data storage services.
 
+Theory of Operation
+-------------------
 The interface is very REST-ful, and intended to behave similarly
 to Amazon S3 storage API, which remembers metadata such as content-type.
 
-In addition, PUT may specify a public key hash (bitcoin address)
+API users upload data using PUT.  Data is guaranteed to be stored
+_at least_ until its expiration date (T + 24 hours), if not longer.
+
+Data may live longer than the minimum guaranteed lifetime.  Data is
+removed only when the system reaches total storage capacity, a new data
+item is to be added, and sufficient expired data exists to be freed.
+HASHFS_MAX_GB in settings.py controls system storage capacity.
+
+In addition, API users may specify a public key hash (bitcoin address)
 for authenticating certain requests such as delete (when implemented).
 
 

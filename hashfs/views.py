@@ -20,6 +20,10 @@ blank_re = re.compile('^\s*$')
 
 SQLS_HASH_QUERY = "SELECT size,time_create,time_expire,content_type FROM metadata WHERE hash = ?"
 SQLS_HASH_INSERT = "INSERT INTO metadata(hash,size,time_create,time_expire,content_type,pubkey_addr) VALUES(?, ?, ?, ?, ?, ?)"
+SQLS_TOTAL_SIZE = "SELECT SUM(size) FROM metadata"
+SQLS_EXPIRED = "SELECT hash,size FROM metadata WHERE time_expire < ? ORDER BY time_expire"
+SQLS_EXPIRE_LIST = "DELETE FROM metadata WHERE "
+
 
 def httpdate(dt):
     """Return a string representation of a date according to RFC 1123
@@ -33,6 +37,101 @@ def httpdate(dt):
              "Oct", "Nov", "Dec"][dt.month - 1]
     return "%s, %02d %s %04d %02d:%02d:%02d GMT" % (weekday, dt.day, month,
         dt.year, dt.hour, dt.minute, dt.second)
+
+
+def make_hashfs_fn(hexstr, make_dirs=False):
+    dir1 = hexstr[:3]
+    dir2 = hexstr[3:6]
+
+    dir1_pn = "%s%s" % (settings.HASHFS_ROOT_DIR, dir1)
+    dir2_pn = "%s%s/%s" % (settings.HASHFS_ROOT_DIR, dir1, dir2)
+    fn = "%s%s/%s/%s" % (settings.HASHFS_ROOT_DIR, dir1, dir2, hexstr)
+
+    if not make_dirs:
+        return fn
+
+    try:
+        if not os.path.isdir(dir2_pn):
+            if not os.path.isdir(dir1_pn):
+                os.mkdir(dir1_pn)
+            os.mkdir(dir2_pn)
+    except OSError:
+        return False
+
+    return fn
+
+
+def hashfs_total_size(cursor):
+    row = cursor.execute(SQLS_TOTAL_SIZE).fetchone()
+    if row is None or row[0] is None:
+        return 0
+    return int(row[0])
+
+def hashfs_free_space(cursor):
+    max_size = settings.HASHFS_MAX_GB * 1000 * 1000 * 1000
+    return max_size - hashfs_total_size(cursor)
+
+def hashfs_expired(cursor):
+    curtime = int(time.time())
+
+    rows = []
+    for md_hash,md_size in cursor.execute(SQLS_EXPIRED, (curtime,)):
+        row = (md_hash, int(md_size))
+        rows.append(row)
+
+    return rows
+
+def hashfs_expired_size(rows):
+    total = 0
+    for row in rows:
+        total = total + row[1]
+    return total
+
+def hashfs_expire_data(cursor, goal):
+    # list all expired records
+    rows = hashfs_expired(cursor)
+    exp_size = hashfs_expired_size(rows)
+
+    # is it possible to meet the goal?  if not, exit now.
+    if goal > exp_size:
+        return
+
+    # build list of data to expire
+    exp_total = 0
+    exp_rows = []
+    for row in rows:
+        exp_total = exp_total + row[1]
+        exp_rows.append(row)
+
+        if exp_toal >= goal:
+            break
+
+    # pass 1: remove metadata
+
+    # dynamically build SQL statement listing all hashes to be removed
+    sqls = SQLS_EXPIRE_LIST
+    in_first = True
+    for row in exp_rows:
+
+        if not in_first:
+            sqls += " OR "
+
+        sqls += "hash='%s'" % (row[0],)
+
+        in_first = False
+
+    # execute large sql stmt
+    cursor.execute(sqls)
+
+    # pass 2: remove data from OS filesystem
+    for row in exp_rows:
+        fn = make_hashfs_fn(row[0])
+
+        try:
+            os.remove(fn)
+        except OSError:
+            logger.error("Failed to remove " + fn)
+
 
 @api_view(['GET'])
 def home(request):
@@ -64,28 +163,6 @@ def home(request):
     ]
     body = json.dumps(home_obj)
     return HttpResponse(body, content_type='application/json')
-
-
-def make_hashfs_fn(hexstr, make_dirs=False):
-    dir1 = hexstr[:3]
-    dir2 = hexstr[3:6]
-
-    dir1_pn = "%s%s" % (settings.HASHFS_ROOT_DIR, dir1)
-    dir2_pn = "%s%s/%s" % (settings.HASHFS_ROOT_DIR, dir1, dir2)
-    fn = "%s%s/%s/%s" % (settings.HASHFS_ROOT_DIR, dir1, dir2, hexstr)
-
-    if not make_dirs:
-        return fn
-
-    try:
-        if not os.path.isdir(dir2_pn):
-            if not os.path.isdir(dir1_pn):
-                os.mkdir(dir1_pn)
-            os.mkdir(dir2_pn)
-    except OSError:
-        return False
-
-    return fn
 
 
 @api_view(['GET'])
@@ -151,6 +228,31 @@ def hashfs_put(request, hexstr):
     if len(hash) != 32:
         return HttpResponseBadRequest("invalid hash length")
 
+    # get sqlite handle
+    connection = settings.HASHFS_DB
+    cursor = connection.cursor()
+
+    # get content-length
+    if not 'CONTENT_LENGTH' in request.META:
+        return HttpResponseBadRequest("content length required")
+    clen = int(request.META['CONTENT_LENGTH'])
+    if clen < 1 or clen > (100 * 1000 * 1000):
+        return HttpResponseBadRequest("invalid content length")
+
+    # do we have room for this new data?
+    free_space = hashfs_free_space(cursor)
+    if free_space < clen:
+
+        # attempt to remove old, expired data (if any)
+        hashfs_expire_data(cursor, clen)
+
+        # do we have room for this new data, pass #2
+        free_space = hashfs_free_space(cursor)
+
+        # TODO: is there a better HTTP status?
+        if free_space < clen:
+            return HttpResponseServerError("insufficient server resources")
+
     # get content-type
     ctype = request.META['CONTENT_TYPE']
     if blank_re.match(ctype):
@@ -190,7 +292,7 @@ def hashfs_put(request, hexstr):
         return HttpResponseBadRequest("hash invalid - does not match data")
 
     # verify content-length matches provided
-    if int(request.META['CONTENT_LENGTH']) != body_len:
+    if clen != body_len:
         return HttpResponseBadRequest("content-length invalid - does not match data")
 
     # write to filesystem
@@ -201,10 +303,6 @@ def hashfs_put(request, hexstr):
     except OSError:
         return HttpResponseServerError("local storage failure")
     body = None
-
-    # get sqlite handle
-    connection = settings.HASHFS_DB
-    cursor = connection.cursor()
 
     # Create, expiration times
     tm_creat = int(time.time())
