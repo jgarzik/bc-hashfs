@@ -198,7 +198,7 @@ def hashfs_get(request, hexstr):
     filename = make_hashfs_fn(hexstr)
 
     try:
-        wrapper = FileWrapper(open(filename))
+        wrapper = FileWrapper(open(filename, 'rb'))
     except:
         logger.error("failed read " + filename)
         return HttpResponseServerError("hash data read failure")
