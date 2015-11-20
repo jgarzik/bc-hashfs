@@ -10,6 +10,7 @@ https://docs.djangoproject.com/en/1.7/ref/settings/
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 import os
+import apsw
 # import from 21 Bitcoin Library
 from two1.lib.wallet import Wallet
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -88,4 +89,7 @@ STATIC_URL = '/static/'
 WALLET = Wallet()
 
 APPEND_SLASH = False
+
+HASHFS_DB = apsw.Connection("hashfs.sqlite3")
+HASHFS_ROOT_DIR = os.path.join(BASE_DIR, 'hashroot/'),
 

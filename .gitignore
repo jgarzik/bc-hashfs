@@ -1,5 +1,6 @@
 
+hashroot/
 __pycache__/
-log/
 daemonize.log
+hashfs.sqlite3
 
