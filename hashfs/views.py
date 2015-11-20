@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 blank_re = re.compile('^\s*$')
 
-SQLS_HASH_QUERY = "SELECT val_size,time_create,time_expire,content_type FROM metadata WHERE hash = ?"
-SQLS_HASH_INSERT = "INSERT INTO metadata(hash,val_size,time_create,time_expire,content_type,pubkey_addr) VALUES(?, ?, ?, ?, ?, ?)"
+SQLS_HASH_QUERY = "SELECT size,time_create,time_expire,content_type FROM metadata WHERE hash = ?"
+SQLS_HASH_INSERT = "INSERT INTO metadata(hash,size,time_create,time_expire,content_type,pubkey_addr) VALUES(?, ?, ?, ?, ?, ?)"
 
 def httpdate(dt):
     """Return a string representation of a date according to RFC 1123

@@ -1,6 +1,6 @@
 CREATE TABLE metadata (
 	hash		TEXT PRIMARY KEY,
-	val_size	INTEGER NOT NULL,
+	size		INTEGER NOT NULL,
 	time_create	INTEGER NOT NULL,
 	time_expire	INTEGER NOT NULL,
 	content_type	TEXT NOT NULL,
