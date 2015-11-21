@@ -91,63 +91,6 @@ def log_usage(f):
     return wrapper
 
 
-def get_passphrase():
-    """ Prompts the user for a passphrase.
-
-    Returns:
-        str: The user-entered passphrase.
-    """
-    return getpass.getpass("Passphrase to unlock wallet: ")
-
-
-@click.pass_context
-def validate_data_provider(ctx, param, value):
-    """ Validates the data provider sent in via the CLI.
-
-    Args:
-        ctx (Click context): Click context object.
-        param (str): Parameter that is being validated.
-        value (str): Parameter value.
-    """
-    data_provider_params = {}
-    if ctx.obj is None:
-        ctx.obj = {}
-
-    if value not in REQUIRED_DATA_PROVIDER_PARAMS:
-        ctx.fail("Unknown data provider %s" % value)
-
-    required = REQUIRED_DATA_PROVIDER_PARAMS[value]
-
-    fail = False
-    for r in required:
-        if r not in ctx.params:
-            s = r.replace('_', '-')
-            click.echo("--%s is required to use %s." % (s, value))
-            fail = True
-        else:
-            data_provider_params[r] = ctx.params[r]
-
-    if fail:
-        ctx.fail("One or more required arguments are missing.")
-
-    dp = None
-    if value == 'chain':
-        key = ctx.params['chain_api_key_id']
-        secret = ctx.params['chain_api_key_secret']
-
-        # validate key and secret for chain data provider
-        if len(key) != 32 or len(secret) != 32 or \
-           not key.isalnum() or not secret.isalnum():
-            ctx.fail("Invalid chain_api_key_id or chain_api_key_secret")
-
-        dp = ChainProvider(api_key_id=key, api_key_secret=secret)
-    elif value == 'twentyone':
-        dp = TwentyOneProvider()
-
-    ctx.obj['data_provider'] = dp
-    ctx.obj['data_provider_params'] = data_provider_params
-
-
 @click.group(context_settings=CONTEXT_SETTINGS)
 @click.option('--endpoint', '-e',
               default=DEFAULT_ENDPOINT,
@@ -186,6 +129,11 @@ def main(ctx, endpoint, debug):
 @log_usage
 def cmd_info(ctx):
     response = requests.get(url=ctx.obj['endpoint'])
+    if response.status_code != 200:
+        print('Server error ' + str(esponse.status_code), file=sys.stderr)
+        print(response.text, file=sys.stderr)
+        return
+
     try:
         json_val = json.loads(response.text)
         pp.pprint(json_val)
@@ -204,6 +152,12 @@ def cmd_get(ctx, hash):
 
     hash_url = "%shashfs/1/get/%s" % (ctx.obj['endpoint'], hash)
     response = requests.get(url=hash_url)
+    if response.status_code != 200:
+        if response.status_code == 404:
+            print('Hash not found', file=sys.stderr)
+        else:
+            print('Server error ' + str(esponse.status_code), file=sys.stderr)
+        return
 
     sys.stdout.write(response.text)
 
@@ -229,8 +183,13 @@ def cmd_put(ctx, input):
     hash_url = "%shashfs/1/put/%s" % (ctx.obj['endpoint'], hash)
     response = requests.put(url=hash_url, data=body)
 
+    # check for success
+    if response.status_code != 200:
+        print('PUT error " + str(response.status_code) + ", hash not stored', file=sys.stderr)
+        print(response.text, file=sys.stderr)
+        return
+
     # output response
-    # TODO: check for success
     print(hash)
 
 
