@@ -52,32 +52,19 @@ Installation
 Install packages
 ----------------
 
-	sudo apt-get install sqlite3 python3-django nginx \
-		python3-djangorestframework \
-		uwsgi-plugin-python3 uwsgi python3-uwsgidecorators
+	sudo apt-get install sqlite3
 
-nginx setup & restart
----------------------
-
-	etc/apiservice.conf to /etc/nginx/sites-enabled
-
-create metadata database for storing file information
+Create metadata database for storing file information
 -----------------------------------------------------
 
 	./mkdb.sh
 
-run uwsgi
----------
+Run the server
+--------------
 
-	uwsgi_python3 --ini uwsgi.ini
+	python3 hashfs-server.py
 
-test your endpoint!
--------------------
-
-stop the server
----------------
-
-	uwsgi --stop /tmp/hashfs-uwsgi.pid
+Now test your endpoint!
 
 API Reference
 =============
