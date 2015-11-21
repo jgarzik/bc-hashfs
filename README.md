@@ -11,7 +11,7 @@ The intention is to have many people/organizations run a hashfs service,
 creating a decentralized storage mesh.
 
 This project aims towards a robust, high performance API service
-using django, nginx, uwsgi and 21BC.
+using flask, nginx and 21BC.
 
 
 Theory of Operation
