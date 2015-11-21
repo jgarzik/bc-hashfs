@@ -5,7 +5,7 @@ hashfs API service
 Summary
 -------
 This is an API service that provides a hash-based REST GET/PUT, providing
-content-addressible data storage services.
+content-addressable data storage services.
 
 The intention is to have many people/organizations run a hashfs service,
 creating a decentralized storage mesh.
