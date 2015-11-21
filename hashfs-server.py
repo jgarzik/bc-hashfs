@@ -8,13 +8,27 @@ import time
 import base58
 from datetime import datetime
 import logging
-from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotFound, HttpResponseServerError
-from django.core.servers.basehttp import FileWrapper
-from rest_framework.decorators import api_view
-from two1.lib.bitserv.django import payment
-import hashfs.settings as settings
+import apsw
+import pprint
 
-logger = logging.getLogger(__name__)
+pp = pprint.PrettyPrinter(indent=2)
+
+# import flask web microframework
+from flask import Flask
+from flask import request
+from flask import abort
+
+# import from the 21 Developer Library
+from two1.lib.wallet import Wallet
+from two1.lib.bitserv.flask import Payment
+
+app = Flask(__name__)
+wallet = Wallet()
+payment = Payment(app, wallet)
+
+HASHFS_ROOT_DIR = "hashroot/"
+HASHFS_MAX_GB = 2
+HASHFS_DB = apsw.Connection("hashfs.sqlite3")
 
 blank_re = re.compile('^\s*$')
 
@@ -24,6 +38,7 @@ SQLS_TOTAL_SIZE = "SELECT SUM(size) FROM metadata"
 SQLS_EXPIRED = "SELECT hash,size FROM metadata WHERE time_expire < ? ORDER BY time_expire"
 SQLS_EXPIRE_LIST = "DELETE FROM metadata WHERE "
 SQLS_HASH_SIZE = "SELECT size FROM metadata WHERE hash = ?"
+
 
 
 def httpdate(dt):
@@ -44,9 +59,9 @@ def make_hashfs_fn(hexstr, make_dirs=False):
     dir1 = hexstr[:3]
     dir2 = hexstr[3:6]
 
-    dir1_pn = "%s%s" % (settings.HASHFS_ROOT_DIR, dir1)
-    dir2_pn = "%s%s/%s" % (settings.HASHFS_ROOT_DIR, dir1, dir2)
-    fn = "%s%s/%s/%s" % (settings.HASHFS_ROOT_DIR, dir1, dir2, hexstr)
+    dir1_pn = "%s%s" % (HASHFS_ROOT_DIR, dir1)
+    dir2_pn = "%s%s/%s" % (HASHFS_ROOT_DIR, dir1, dir2)
+    fn = "%s%s/%s/%s" % (HASHFS_ROOT_DIR, dir1, dir2, hexstr)
 
     if not make_dirs:
         return fn
@@ -69,7 +84,7 @@ def hashfs_total_size(cursor):
     return int(row[0])
 
 def hashfs_free_space(cursor):
-    max_size = settings.HASHFS_MAX_GB * 1000 * 1000 * 1000
+    max_size = HASHFS_MAX_GB * 1000 * 1000 * 1000
     return max_size - hashfs_total_size(cursor)
 
 def hashfs_expired(cursor):
@@ -131,7 +146,7 @@ def hashfs_expire_data(cursor, goal):
         try:
             os.remove(fn)
         except OSError:
-            logger.error("Failed to remove " + fn)
+            app.logger.error("Failed to remove " + fn)
 
 def hashfs_hash_size(cursor, hash):
     row = cursor.execute(SQLS_HASH_SIZE, (hash,)).fetchone()
@@ -140,8 +155,8 @@ def hashfs_hash_size(cursor, hash):
     return int(row[0])
 
 
-@api_view(['GET'])
-def home(request):
+@app.route('/')
+def home():
     # export API endpoint metadata
     home_obj = [
         {
@@ -169,7 +184,11 @@ def home(request):
         }
     ]
     body = json.dumps(home_obj)
-    return HttpResponse(body, content_type='application/json')
+
+    return (body, 200, {
+        'Content-length': len(body),
+        'Content-type': 'application/json',
+    })
 
 
 def hashfs_price_get(request):
@@ -180,11 +199,11 @@ def hashfs_price_get(request):
     hexstr = path[sl_pos+1:]
 
     # lookup size of $hash's data (if present)
-    connection = settings.HASHFS_DB
+    connection = HASHFS_DB
     cursor = connection.cursor()
     val_size = hashfs_hash_size(cursor, hexstr)
     if val_size is None:
-        logger.warning("returning 2 zero price for " + request.path)
+        app.logger.warning("returning 2 zero price for " + request.path)
         return 0
 
     # build pricing structure
@@ -195,33 +214,33 @@ def hashfs_price_get(request):
     price = 1                    # 1 sat - base per-request price
     price = price + (mb * 2)     # 2 sat/MB bandwidth price
 
-    logger.info("returning price " + str(price) + " for " + request.path)
+    app.logger.info("returning price " + str(price) + " for " + request.path)
     return price
 
 
-@api_view(['GET'])
+@app.route('/hashfs/1/get/<hexstr>')
 @payment.required(hashfs_price_get)
-def hashfs_get(request, hexstr):
+def hashfs_get(hexstr):
 
     # decode hex string param
     hexstr = hexstr.lower()
     try:
         hash = binascii.unhexlify(hexstr)
     except TypeError:
-        return HttpResponseBadRequest("invalid hash")
+        abort(400)
 
     if len(hash) != 32:
-        return HttpResponseBadRequest("invalid hash length")
+        abort(400)
 
     # get sqlite handle
-    connection = settings.HASHFS_DB
+    connection = HASHFS_DB
     cursor = connection.cursor()
 
     # query for metadata
     md = {}
     row = cursor.execute(SQLS_HASH_QUERY, (hexstr,)).fetchone()
     if row is None:
-        return HttpResponseNotFound("hash not found")
+        abort(404)
 
     md['size'] = int(row[0])
     md['created'] = int(row[1])
@@ -232,46 +251,50 @@ def hashfs_get(request, hexstr):
     filename = make_hashfs_fn(hexstr)
 
     try:
-        wrapper = FileWrapper(open(filename, 'rb'))
+        body = open(filename, 'rb').read()
     except:
-        logger.error("failed read " + filename)
-        return HttpResponseServerError("hash data read failure")
+        app.logger.error("failed read " + filename)
+        abort(500)
+
+    if len(body) != md['size']:
+        abort(500)
 
     dt = datetime.fromtimestamp(md['created'])
     last_mod = httpdate(dt)
 
-    response = HttpResponse(wrapper, content_type='application/octet-stream')
-    response['Content-Length'] = md['size']
-    response['Content-Type'] = md['content_type']
-    response['ETag'] = hexstr
-    response['Last-Modified'] = last_mod
-    return response
+    return (body, 200, {
+        'Content-Length': md['size'],
+        'Content-Type': md['content_type'],
+        'ETag': hexstr,
+        'Last-Modified': last_mod,
+    })
 
 
-@api_view(['PUT'])
+@app.route('/hashfs/1/put/<hexstr>', methods=['PUT'])
 @payment.required(1)
-def hashfs_put(request, hexstr):
+def hashfs_put(hexstr):
 
     # decode hex string param
     hexstr = hexstr.lower()
     try:
         hash = binascii.unhexlify(hexstr)
     except TypeError:
-        return HttpResponseBadRequest("invalid hash")
+        abort(400)
 
     if len(hash) != 32:
-        return HttpResponseBadRequest("invalid hash length")
+        abort(400)
 
     # get sqlite handle
-    connection = settings.HASHFS_DB
+    connection = HASHFS_DB
     cursor = connection.cursor()
 
     # get content-length
-    if not 'CONTENT_LENGTH' in request.META:
-        return HttpResponseBadRequest("content length required")
-    clen = int(request.META['CONTENT_LENGTH'])
+    clen_str = request.headers.get('content-length')
+    if clen_str is None:
+        abort(400)
+    clen = int(request.headers.get('content-length'))
     if clen < 1 or clen > (100 * 1000 * 1000):
-        return HttpResponseBadRequest("invalid content length")
+        abort(400)
 
     # do we have room for this new data?
     free_space = hashfs_free_space(cursor)
@@ -285,37 +308,39 @@ def hashfs_put(request, hexstr):
 
         # TODO: is there a better HTTP status?
         if free_space < clen:
-            return HttpResponseServerError("insufficient server resources")
+            abort(500)
 
     # get content-type
-    ctype = request.META['CONTENT_TYPE']
+    ctype = request.headers.get('content-type')
     if blank_re.match(ctype):
         ctype = 'application/octet-stream'
 
     # note public key hash, if provided
-    pkh = None
-    if 'HTTP_X_HASHFS_PKH' in request.META:
-        pkh = request.META['HTTP_X_HASHFS_PKH']
-
+    pkh = request.headers.get('x-hashfs-pkh')
+    if not pkh is None:
         if len(pkh) < 32 or len(pkh) > 35:
-            return HttpResponseBadRequest("invalid pubkey hash length")
+            abort(400)
 
         try:
             base58.b58decode_check(pkh)
         except:
-            return HttpResponseBadRequest("invalid pubkey hash")
+            abort(400)
 
     # check file existence; if it exists, no need to proceed further
     # create dir1/dir2 hierarchy if need be
     filename = make_hashfs_fn(hexstr, True)
     if filename is None:
-        return HttpResponseServerError("local storage failure")
+        abort(500)
     if os.path.isfile(filename):
-        return HttpResponseBadRequest("hash already exists")
+        abort(400)
 
     # get data in memory, up to 100M (limit set in nginx config)
-    body = request.body
+    body = request.data
     body_len = len(body)
+
+    # verify content-length matches provided
+    if clen != body_len:
+        abort(400)
 
     # hash data
     h = hashlib.new('sha256')
@@ -323,11 +348,7 @@ def hashfs_put(request, hexstr):
 
     # verify hash matches provided
     if h.hexdigest() != hexstr:
-        return HttpResponseBadRequest("hash invalid - does not match data")
-
-    # verify content-length matches provided
-    if clen != body_len:
-        return HttpResponseBadRequest("content-length invalid - does not match data")
+        abort(400)
 
     # write to filesystem
     try:
@@ -335,7 +356,7 @@ def hashfs_put(request, hexstr):
         outf.write(body)
         outf.close()
     except OSError:
-        return HttpResponseServerError("local storage failure")
+        abort(500)
     body = None
 
     # Create, expiration times
@@ -346,5 +367,13 @@ def hashfs_put(request, hexstr):
     # TODO: test for errors, unlink file if so
     cursor.execute(SQLS_HASH_INSERT, (hexstr, body_len, tm_creat, tm_expire, ctype, pkh))
 
-    return HttpResponse('true', content_type='application/json')
+    return ("true\n", 200, {
+        'Content-length': body_len,
+        'Content-type': 'application/json',
+    })
+
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8001)
 

@@ -1,6 +1,6 @@
 
 hashroot/
 __pycache__/
-daemonize.log
 hashfs.sqlite3
+payment.sqlite3
 

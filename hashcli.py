@@ -186,8 +186,11 @@ def main(ctx, endpoint, debug):
 @log_usage
 def cmd_info(ctx):
     response = requests.get(url=ctx.obj['endpoint'])
-    json_val = json.loads(response.text)
-    pp.pprint(json_val)
+    try:
+        json_val = json.loads(response.text)
+        pp.pprint(json_val)
+    except:
+        print(response.text)
 
 
 @click.command(name='get')
@@ -227,6 +230,7 @@ def cmd_put(ctx, input):
     response = requests.put(url=hash_url, data=body)
 
     # output response
+    # TODO: check for success
     print(hash)
 
 
