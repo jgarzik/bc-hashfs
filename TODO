@@ -9,3 +9,6 @@
 
 - variable pricing
 
+- convert hashfs to full Django app, enabling super-servers to
+  add hashfs service simply by adding to their urls.py
+
