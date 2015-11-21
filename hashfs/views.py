@@ -23,6 +23,7 @@ SQLS_HASH_INSERT = "INSERT INTO metadata(hash,size,time_create,time_expire,conte
 SQLS_TOTAL_SIZE = "SELECT SUM(size) FROM metadata"
 SQLS_EXPIRED = "SELECT hash,size FROM metadata WHERE time_expire < ? ORDER BY time_expire"
 SQLS_EXPIRE_LIST = "DELETE FROM metadata WHERE "
+SQLS_HASH_SIZE = "SELECT size FROM metadata WHERE hash = ?"
 
 
 def httpdate(dt):
@@ -132,6 +133,12 @@ def hashfs_expire_data(cursor, goal):
         except OSError:
             logger.error("Failed to remove " + fn)
 
+def hashfs_hash_size(cursor, hash):
+    row = cursor.execute(SQLS_HASH_SIZE, (hash,)).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return int(row[0])
+
 
 @api_view(['GET'])
 def home(request):
@@ -144,7 +151,7 @@ def home(request):
                 {
                     "rpc": "get",
                     "per-req": 1,         # 1 satoshi per request
-                    "per-kb": 10,         # 10 satoshis per 1000 bytes
+                    "per-mb": 2,          # 2 satoshi per 1000000 bytes
                 },
                 {
                     "rpc": "put",
@@ -165,8 +172,35 @@ def home(request):
     return HttpResponse(body, content_type='application/json')
 
 
+def hashfs_price_get(request):
+
+    # re-parse path, as we are denied access to urls.py tokens
+    path = request.path
+    sl_pos = path.rfind('/')
+    hexstr = path[sl_pos+1:]
+
+    # lookup size of $hash's data (if present)
+    connection = settings.HASHFS_DB
+    cursor = connection.cursor()
+    val_size = hashfs_hash_size(cursor, hexstr)
+    if val_size is None:
+        logger.warning("returning 2 zero price for " + request.path)
+        return 0
+
+    # build pricing structure
+    mb = int(val_size / 1000000)
+    if mb == 0:
+        mb = 1
+
+    price = 1                    # 1 sat - base per-request price
+    price = price + (mb * 2)     # 2 sat/MB bandwidth price
+
+    logger.info("returning price " + str(price) + " for " + request.path)
+    return price
+
+
 @api_view(['GET'])
-@payment.required(1)
+@payment.required(hashfs_price_get)
 def hashfs_get(request, hexstr):
 
     # decode hex string param

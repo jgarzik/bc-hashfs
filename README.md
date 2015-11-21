@@ -43,8 +43,8 @@ $hash is the hex-encoded SHA256 hash of the data.
 API Pricing
 ===========
 
-* GET requests: 1 satoshi
-* PUT requests: 1 satoshi
+* GET requests: 1 satoshi/request + 2 satoshis/MB transfer
+* PUT requests: 1 satoshi/request
 
 Installation
 ============
