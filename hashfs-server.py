@@ -183,7 +183,7 @@ def home():
             ]
         }
     ]
-    body = json.dumps(home_obj)
+    body = json.dumps(home_obj, indent=2)
 
     return (body, 200, {
         'Content-length': len(body),
