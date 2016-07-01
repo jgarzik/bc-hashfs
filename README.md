@@ -11,7 +11,8 @@ The intention is to have many people/organizations run a hashfs service,
 creating a decentralized storage mesh.
 
 This project aims towards a robust, high performance API service
-using flask, nginx and 21BC.
+using [Flask](http://flask.pocoo.org), [nginx](https://www.nginx.com) and
+[21](https://21.co/).
 
 
 Theory of Operation
